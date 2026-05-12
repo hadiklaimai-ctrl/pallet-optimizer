@@ -1,13 +1,10 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import os
-import google.generativeai as genai
+from google import genai
 
-# הגדרת Gemini (המפתח נמשך מהכספת של Vercel)
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-
-# שימוש במודל Pro לדיוק מקסימלי בחישובים מרחביים
-model = genai.GenerativeModel('gemini-1.5-pro') 
+# אתחול הלקוח עם הספרייה החדשה
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -15,7 +12,7 @@ class handler(BaseHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             post_data = json.loads(self.rfile.read(content_length))
             
-            # פרומפט הנדסי מדויק למניעת ריחוף והבטחת 10 יחידות
+            # פרומפט הנדסי קשיח למניעת ריחוף והבטחת 10 יחידות
             prompt = f"""
             Task: 3D Pallet Stacking Optimization.
             Pallet: 120x100.
@@ -34,9 +31,13 @@ class handler(BaseHTTPRequestHandler):
             Format: {{"items": [{{"type": "string", "coords": {{"x": [min,max], "y": [min,max], "z": [min,max]}}}}]}}
             """
             
-            response = model.generate_content(prompt)
+            # קריאה למודל Pro בפורמט החדש
+            response = client.models.generate_content(
+                model='gemini-1.5-pro',
+                contents=prompt
+            )
             
-            # ניקוי תגיות Markdown מהתשובה
+            # ניקוי תגיות Markdown
             clean_res = response.text.strip().replace('```json', '').replace('```', '')
             
             self.send_response(200)
@@ -47,5 +48,8 @@ class handler(BaseHTTPRequestHandler):
             
         except Exception as e:
             self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            error_message = json.dumps({"error": str(e)})
+            self.wfile.write(error_message.encode())
