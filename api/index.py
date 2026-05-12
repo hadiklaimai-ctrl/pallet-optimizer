@@ -3,53 +3,52 @@ import json
 import os
 from google import genai
 
-# אתחול הלקוח עם הספרייה החדשה
+# אתחול הלקוח - וודא שהמפתח GEMINI_API_KEY קיים ב-Vercel Settings
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length)
+        
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = json.loads(self.rfile.read(content_length))
+            post_data = json.loads(body)
             
-            # פרומפט הנדסי קשיח למניעת ריחוף והבטחת 10 יחידות
             prompt = f"""
-            Task: 3D Pallet Stacking Optimization.
+            Task: Professional 3D Pallet Stacking.
             Pallet: 120x100.
-            Boxes to pack: {post_data.get('boxes')}
+            Boxes: {post_data.get('boxes')}
             
-            CRITICAL PHYSICS RULES:
-            1. GRAVITY: Every box MUST sit on the floor (Z=0) or directly on top of another box. 
-            2. NO FLOATING: A box's Z_min must equal the Z_max of the box below it.
-            3. 10-UNIT LAYER PATTERN: For 40x30 boxes on a 120x100 pallet, use this exact layout:
-               - Two rows of 3 boxes in 40x30 orientation (covers 120x60).
-               - One row of 4 boxes rotated to 30x40 orientation (covers 120x40).
-               - Total = 10 boxes per flat layer.
-            
-            OUTPUT:
-            Return ONLY a JSON object with an "items" array. No conversational text.
-            Format: {{"items": [{{"type": "string", "coords": {{"x": [min,max], "y": [min,max], "z": [min,max]}}}}]}}
+            STRICT RULES:
+            - Every layer MUST have 10 boxes (6 boxes at 40x30 + 4 boxes at 30x40).
+            - NO floating boxes. Every box must sit on Z=0 or on another box.
+            - Output ONLY JSON with an "items" array.
             """
-            
-            # קריאה למודל Pro בפורמט החדש
+
+            # שימוש ב-Pro לדיוק מקסימלי
             response = client.models.generate_content(
                 model='gemini-1.5-pro',
                 contents=prompt
             )
             
-            # ניקוי תגיות Markdown
-            clean_res = response.text.strip().replace('```json', '').replace('```', '')
+            # ניקוי בטוח של התשובה
+            text_res = response.text
+            if "```json" in text_res:
+                text_res = text_res.split("```json")[1].split("```")[0]
+            elif "```" in text_res:
+                text_res = text_res.split("```")[1].split("```")[0]
             
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(clean_res.encode())
-            
+            self.wfile.write(text_res.strip().encode())
+
         except Exception as e:
-            self.send_response(500)
+            # אם יש שגיאה, נחזיר אותה בצורה מסודרת ללוגים
+            print(f"Error occurred: {str(e)}")
+            self.send_response(200) # נחזיר 200 כדי ש-Base44 לא יקרוס, אבל עם הודעת שגיאה
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            error_message = json.dumps({"error": str(e)})
-            self.wfile.write(error_message.encode())
+            self.wfile.write(json.dumps({"error": str(e), "fallback": True}).encode())
