@@ -3,7 +3,6 @@ import json
 import os
 from google import genai
 
-# הגדרת הלקוח של Gemini
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class handler(BaseHTTPRequestHandler):
@@ -13,50 +12,39 @@ class handler(BaseHTTPRequestHandler):
         
         try:
             post_data = json.loads(body)
-            
-            # חילוץ נתוני המשטח והקרטונים מה-Request
             pallet = post_data.get('pallet', {})
             pallet_l = pallet.get('length_cm', 120)
             pallet_w = pallet.get('width_cm', 100)
-            pallet_h = pallet.get('max_height_cm', 200)
             
             raw_boxes = post_data.get('boxInputs', [])
-            box_descriptions = []
+            boxes_info = ""
             for b in raw_boxes:
                 m = b.get('material', {})
-                qty = b.get('qty', 0)
-                desc = f"{qty} units of '{m.get('packaging_name')}' (Dims: {m.get('length_cm')}x{m.get('width_cm')}x{m.get('height_cm')} cm)"
-                box_descriptions.append(desc)
-            
-            box_info_str = "\n".join(box_descriptions)
+                boxes_info += f"- {b.get('qty')} units of '{m.get('packaging_name')}': {m.get('length_cm')}x{m.get('width_cm')}x{m.get('height_cm')} cm\n"
 
-            # Prompt אופטימיזציה מתקדם
             prompt = f"""
-            Role: Expert Logistics & Spatial Optimization Engine.
-            Task: Pack a pallet ({pallet_l}x{pallet_w} cm, max height {pallet_h} cm) with the following boxes:
-            {box_info_str}
-
-            GOAL: Maximize volume utilization (Aim for 100%). 
+            Act as a Professional Logistics Optimization Engine.
+            Task: Pack a {pallet_l}x{pallet_w} cm pallet.
             
-            RULES:
-            1. Use the EXACT dimensions provided for each box type.
-            2. You MAY rotate boxes (e.g., change 40x30 to 30x40) to fit more units.
-            3. Boxes must stay within pallet boundaries ({pallet_l}x{pallet_w}).
-            4. Stack boxes in logical layers (Z-axis).
-            5. Ensure stability: boxes should be placed on the pallet or on top of other boxes.
+            INVENTORY:
+            {boxes_info}
 
-            OUTPUT: Return ONLY a valid JSON object with an "items" array.
-            Each item format: 
-            {{ "type": "Box Name", "coords": {{ "x": [start, end], "y": [start, end], "z": [start, end] }} }}
+            STRICT STABILITY RULES:
+            1. UNIFORM LAYER HEIGHT: Every box within a single layer (the same Z-range) MUST have the exact same height. 
+            2. FLAT SURFACE: You are forbidden from mixing different heights in an intermediate layer. Each layer must provide a perfectly flat surface for the next one.
+            3. EXCEPTION: Only the very last (top-most) layer of the pallet may contain boxes of different heights.
+            4. COORDINATES: Pallet starts at (0,0,0). Max boundaries are {pallet_l}x{pallet_w}.
+
+            STRATEGY:
+            - Maximize surface utilization using rotations (90 deg).
+            - Group boxes of the same height together to form full, level layers.
+
+            OUTPUT: 
+            Return ONLY a JSON object with an "items" array. 
+            Format: {{ "type": "Box Name", "coords": {{ "x": [s, e], "y": [s, e], "z": [s, e] }} }}
             """
 
-            # יצירת הפתרון באמצעות Gemini
-            response = client.models.generate_content(
-                model='gemini-1.5-pro',
-                contents=prompt
-            )
-            
-            # ניקוי התשובה מסימני Markdown אם קיימים
+            response = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
             clean_res = response.text.strip().replace('```json', '').replace('```', '')
             
             self.send_response(200)
@@ -66,7 +54,7 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(clean_res.encode())
 
         except Exception as e:
-            self.send_response(200) # מחזירים 200 כדי ש-Base44 יוכל לקרוא את השגיאה
+            self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
