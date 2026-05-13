@@ -12,27 +12,33 @@ class handler(BaseHTTPRequestHandler):
         
         try:
             post_data = json.loads(body)
-            pallet = post_data.get('pallet', {})
-            pallet_l = pallet.get('length_cm', 120)
-            pallet_w = pallet.get('width_cm', 100)
-            
-            # שליפת הנתונים מה-UI
-            raw_boxes = post_data.get('boxInputs', [])
+            pallet_l = 120
+            pallet_w = 100
             
             prompt = f"""
-            Task: Professional 3D Palletizing Simulation.
-            Pallet Dimensions: {pallet_l}x{pallet_w} cm.
-            
-            STRICT STACKING STRATEGY:
-            1. TALL BOXES FIRST: Always start packing from the pallet base (Z=0) using the TALLEST boxes available in the inventory.
-            2. VERTICAL HIERARCHY: Smaller/shorter boxes must only be placed AFTER the taller boxes have been positioned or when no more taller boxes can fit in a stable layer.
-            3. STABLE LAYERS: Each layer (Z-range) must have a uniform height. Do not mix different box heights in the same horizontal layer unless it's the final top layer.
-            
-            GEOMETRY RULES:
-            - Aim for 10 units per layer (120x100 cm) using: 2 rows of 3 (40x30) and 1 row of 4 (30x40 rotated).
-            - Ensure every box has a "type" name and accurate "coords" in JSON.
+            Task: 3D Palletizing Optimization.
+            Inventory: 15 Large Boxes (40x30x8 cm), 20 Small Boxes (40x30x4 cm).
+            Pallet: 120x100 cm.
 
-            OUTPUT: Return ONLY a valid JSON object with an "items" array.
+            STRICT LAYER BLUEPRINT (Total Height: 20cm):
+            
+            1. LAYER 1 (Z: 0-8cm): 
+               - Place 10 Large Boxes (5K) to cover the full 120x100 surface.
+            
+            2. LAYER 2 (Z: 8-16cm) - COMPOSITE LAYER:
+               - Section A: Place the remaining 5 Large Boxes (5K).
+               - Section B: In the remaining space, place 5 Small Boxes (5K ei) at Z: 8-12.
+               - Section C: Place another 5 Small Boxes (5K ei) DIRECTLY ON TOP of the ones in Section B (Z: 12-16).
+               - Result: The entire Layer 2 must end at exactly Z=16cm.
+            
+            3. LAYER 3 (Z: 16-20cm):
+               - Place the remaining 10 Small Boxes (5K ei).
+
+            GEOMETRY:
+            - Each full layer of 10 units must use the 120x100 layout (6 boxes at 40x30 + 4 boxes at 30x40).
+            - Use "type": "5K" for Large and "5K ei" for Small.
+
+            OUTPUT: JSON with "items" array only.
             """
 
             response = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
